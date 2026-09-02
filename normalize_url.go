@@ -20,8 +20,8 @@ func normalizeURL(urlString string) (string, error) {
 
 	urlPath = strings.TrimSuffix(urlPath, "/")
 
-	url := fmt.Sprintf("%s%s", parsedURL.Hostname(), urlPath)
-	return url, nil
+	resultURL := fmt.Sprintf("%s%s", parsedURL.Hostname(), urlPath)
+	return resultURL, nil
 
 }
 
@@ -67,4 +67,99 @@ func getFirstParagraphFromHTML(html string) string {
 	}
 
 	return paragraph.Eq(0).Text()
+}
+
+func getURLsFromHTML(htmlBody string, baseURL *url.URL) ([]string, error) {
+	reader := strings.NewReader(htmlBody)
+	doc, err := goquery.NewDocumentFromReader(reader)
+	var urls []string
+
+	if err != nil {
+		log.Println("Error goquery: ", err)
+		return urls, err
+	}
+
+	doc.Find("a[href]").Each(func(_ int, s *goquery.Selection) {
+		relativePath, ok := s.Attr("href")
+		if !ok {
+			log.Println("Err in relative path, path may not exist")
+			return
+		}
+
+		urlFromRelative, err := url.Parse(relativePath)
+		if err != nil {
+			log.Println("Err in relative path: ", err)
+			return
+		}
+
+		resolved := baseURL.ResolveReference(urlFromRelative)
+
+		urls = append(urls, resolved.String())
+
+	})
+
+	return urls, nil
+}
+
+func getImagesFromHTML(htmlBody string, baseURL *url.URL) ([]string, error) {
+	reader := strings.NewReader(htmlBody)
+	doc, err := goquery.NewDocumentFromReader(reader)
+	var urls []string
+
+	if err != nil {
+		log.Println("Error goquery: ", err)
+		return urls, err
+	}
+
+	doc.Find("img").Each(func(_ int, s *goquery.Selection) {
+		relativePath, ok := s.Attr("src")
+		if !ok {
+			log.Println("Err in relative path: ", err)
+			return
+		}
+
+		urlFromRelative, err := url.Parse(relativePath)
+		if err != nil {
+			log.Println("Err in relative path: ", err)
+			return
+		}
+
+		resolved := baseURL.ResolveReference(urlFromRelative)
+
+		urls = append(urls, resolved.String())
+
+	})
+
+	return urls, nil
+
+}
+
+func extractPageData(html string, pageURL string) PageData {
+
+	var pageData PageData
+
+	heading := getHeadingFromHTML(html)
+	firstParagraph := getFirstParagraphFromHTML(html)
+	pageData.Heading = heading
+	pageData.FirstParagraph = firstParagraph
+
+	urlStruct, err := url.Parse(pageURL)
+	if err != nil {
+		return pageData
+	}
+	pageData.URL = urlStruct.String()
+
+	outgoingLinks, err := getURLsFromHTML(html, urlStruct)
+	if err != nil {
+		return pageData
+	}
+	pageData.OutgoingLinks = outgoingLinks
+
+	imageURLs, err := getImagesFromHTML(html, urlStruct)
+	if err != nil {
+		return pageData
+	}
+	pageData.ImageURLs = imageURLs
+
+	return pageData
 }
